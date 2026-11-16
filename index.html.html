@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>한일 협약(1907) 지식 그래프 시각화</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- D3.js v7 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Google Fonts: Inter & Noto Sans KR -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            background-color: #FFFFFF;
+            color: #1E293B;
+            overflow: hidden;
+        }
+        /* 커스텀 스크롤바 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #F8FAFC;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94A3B8;
+        }
+        /* SVG 그래프 요소 스타일 */
+        #graph-container {
+            background-color: #FFFFFF;
+            background-image: radial-gradient(#E2E8F0 1px, transparent 1px);
+            background-size: 24px 24px;
+            cursor: grab;
+        }
+        #graph-container:active {
+            cursor: grabbing;
+        }
+        .node-group {
+            cursor: pointer;
+            transition: opacity 0.25s ease;
+        }
+        .node-shape {
+            transition: transform 0.2s ease, stroke-width 0.2s ease, filter 0.2s ease;
+        }
+        .node-group:hover .node-shape {
+            filter: drop-shadow(0 4px 8px rgba(15, 23, 42, 0.18));
+        }
+        .node-selected .node-shape {
+            stroke: #0F172A !important;
+            stroke-width: 3.5px !important;
+            filter: drop-shadow(0 0 10px rgba(37, 99, 235, 0.45));
+        }
+        .link-group {
+            transition: opacity 0.25s ease;
+        }
+        .link-path {
+            fill: none;
+            transition: stroke 0.2s ease, stroke-width 0.2s ease;
+            cursor: pointer;
+        }
+        .link-hitarea {
+            fill: none;
+            stroke: transparent;
+            stroke-width: 14px;
+            cursor: pointer;
+        }
+        .link-label-bg {
+            fill: rgba(255, 255, 255, 0.92);
+            stroke: #E2E8F0;
+            stroke-width: 0.8px;
+            rx: 4px;
+            ry: 4px;
+            cursor: pointer;
+        }
+        .link-label {
+            font-size: 10.5px;
+            font-weight: 500;
+            fill: #475569;
+            pointer-events: none;
+            user-select: none;
+        }
+        .node-label {
+            font-size: 12px;
+            font-weight: 600;
+            fill: #0F172A;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 0 1px 3px rgba(255,255,255,0.95), 0 -1px 3px rgba(255,255,255,0.95), 1px 0 3px rgba(255,255,255,0.95), -1px 0 3px rgba(255,255,255,0.95);
+        }
+        .node-sublabel {
+            font-size: 9.5px;
+            font-weight: 500;
+            fill: #64748B;
+            pointer-events: none;
+            user-select: none;
+        }
+        .dimmed {
+            opacity: 0.14 !important;
+        }
+        .highlighted-link .link-path {
+            stroke: #2563EB !important;
+            stroke-width: 2.5px !important;
+        }
+        .highlighted-link .link-label {
+            fill: #1D4ED8 !important;
+            font-weight: 700;
+        }
+        .highlighted-link .link-label-bg {
+            stroke: #93C5FD !important;
+            fill: #EFF6FF !important;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col bg-white text-slate-800 select-none">
+
+    <!-- 상단 헤더 바 -->
+    <header class="h-14 border-b border-slate-200 bg-white px-4 flex items-center justify-between shrink-0 z-20 shadow-xs">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                KG
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-base font-bold text-slate-900 tracking-tight">한일 협약(1907 · 정미7조약) 지식 그래프</h1>
+                    <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                        사료 원문 온톨로지
+                    </span>
+                </div>
+                <p class="text-xs text-slate-500 hidden md:block">광무 11년(명치 40년) 7월 24일 체결 사료 기반 개체·관계 시각화</p>
+            </div>
+        </div>
+
+        <!-- 검색 및 뷰 컨트롤 -->
+        <div class="flex items-center gap-2">
+            <!-- 노드 검색창 -->
+            <div class="relative">
+                <input type="text" id="search-input" placeholder="노드·조항·원문 검색..."
+                    class="w-40 sm:w-56 pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
+                <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <button id="clear-search" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 text-xs font-bold">✕</button>
+            </div>
+
+            <!-- 줌 및 레이아웃 컨트롤 버튼 그룹 -->
+            <div class="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                <button id="btn-zoom-in" title="확대 (Zoom In)" class="p-1.5 hover:bg-white rounded-md text-slate-700 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                </button>
+                <button id="btn-zoom-out" title="축소 (Zoom Out)" class="p-1.5 hover:bg-white rounded-md text-slate-700 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
+                </button>
+                <button id="btn-fit" title="화면 맞춤 (Fit to Screen)" class="px-2 py-1 text-xs font-medium hover:bg-white rounded-md text-slate-700 transition-colors flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                    <span class="hidden sm:inline">맞춤</span>
+                </button>
+                <button id="btn-reset" title="레이아웃 초기화 (Reset Layout)" class="px-2 py-1 text-xs font-medium hover:bg-white rounded-md text-slate-700 transition-colors flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    <span class="hidden sm:inline">초기화</span>
+                </button>
+            </div>
+
+            <!-- 사료 원문 모달 버튼 -->
+            <button id="btn-source-modal" class="px-2.5 py-1.5 text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                <span>사료 원문</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- 메인 워크스페이스 (좌측 필터 + 중앙 그래프 + 우측 상세 패널) -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- 좌측 클래스 필터 및 범례 사이드바 -->
+        <aside id="left-sidebar" class="w-60 border-r border-slate-200 bg-white flex flex-col shrink-0 z-10 transition-all">
+            <div class="p-3.5 border-b border-slate-100 flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-500">클래스 (Class) 필터</span>
+                <button id="btn-toggle-all" class="text-[11px] font-medium text-blue-600 hover:text-blue-800">전체 선택</button>
+            </div>
+
+            <div id="class-filter-list" class="p-3 space-y-1.5 overflow-y-auto flex-1">
+                <!-- JS로 동적 생성 -->
+            </div>
+
+            <!-- 그래프 요약 통계 -->
+            <div class="p-3.5 border-t border-slate-200 bg-slate-50/70">
+                <div class="text-[11px] font-semibold text-slate-500 mb-2">지식 그래프 통계</div>
+                <div class="grid grid-cols-3 gap-1.5 text-center">
+                    <div class="bg-white p-1.5 rounded-md border border-slate-200">
+                        <div class="text-sm font-bold text-slate-800" id="stat-classes">7</div>
+                        <div class="text-[10px] text-slate-500">클래스</div>
+                    </div>
+                    <div class="bg-white p-1.5 rounded-md border border-slate-200">
+                        <div class="text-sm font-bold text-blue-600" id="stat-nodes">22</div>
+                        <div class="text-[10px] text-slate-500">노드</div>
+                    </div>
+                    <div class="bg-white p-1.5 rounded-md border border-slate-200">
+                        <div class="text-sm font-bold text-emerald-600" id="stat-links">22</div>
+                        <div class="text-[10px] text-slate-500">관계</div>
+                    </div>
+                </div>
+                <div class="mt-2.5 flex items-center justify-between">
+                    <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                        <input type="checkbox" id="toggle-edge-labels" checked class="rounded text-blue-600 focus:ring-blue-500">
+                        <span>관계 라벨 표시</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                        <input type="checkbox" id="toggle-articles" checked class="rounded text-blue-600 focus:ring-blue-500">
+                        <span>조항 노드</span>
+                    </label>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 중앙 D3.js 인터랙티브 그래프 캔버스 -->
+        <main id="graph-container" class="flex-1 relative overflow-hidden">
+            <svg id="kg-svg" class="w-full h-full block"></svg>
+
+            <!-- 하단 조작 가이드 플로팅 뱃지 -->
+            <div class="absolute bottom-3 left-3 bg-white/95 backdrop-blur-xs border border-slate-200 rounded-lg px-3 py-1.5 shadow-xs text-[11px] text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1 pointer-events-none">
+                <span>🖱️ <b>드래그:</b> 노드 위치 이동 / 배경 이동</span>
+                <span>🔍 <b>휠:</b> 확대·축소</span>
+                <span>👆 <b>클릭:</b> 상세 원문·트리플 조회</span>
+                <span>✨ <b>호버:</b> 연결 관계 강조</span>
+            </div>
+        </main>
+
+        <!-- 우측 상세 정보 인스펙터 패널 -->
+        <aside id="right-sidebar" class="w-80 lg:w-96 border-l border-slate-200 bg-white flex flex-col shrink-0 z-10 shadow-xs">
+            <div class="p-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/60">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-slate-700">개체 · 관계 상세 인스펙터</h2>
+                </div>
+                <button id="btn-clear-selection" class="hidden text-xs text-slate-400 hover:text-slate-700 font-medium">선택 해제</button>
+            </div>
+
+            <div id="detail-content" class="flex-1 overflow-y-auto p-4 select-text">
+                <!-- 초기 안내 상태 -->
+                <div class="h-full flex flex-col items-center justify-center text-center text-slate-400 px-4">
+                    <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 text-slate-500">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <p class="text-sm font-semibold text-slate-600 mb-1">노드 또는 관계선을 선택하세요</p>
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        그래프의 노드나 화살표를 클릭하면 사료 원문 표기, 클래스 정의, 연결된 모든 트리플(Subject → Predicate → Object)을 확인할 수 있습니다.
+                    </p>
+                    <div class="mt-5 w-full text-left bg-slate-50 rounded-lg p-3 border border-slate-200/80">
+                        <div class="text-[11px] font-bold text-slate-600 mb-1.5">빠른 탐색 추천 노드</div>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button onclick="selectNodeById('T_01')" class="px-2 py-1 text-[11px] bg-white border border-slate-200 rounded-md hover:border-blue-400 hover:text-blue-600 transition-colors">한일 협약(1907)</button>
+                            <button onclick="selectNodeById('OP_01')" class="px-2 py-1 text-[11px] bg-white border border-slate-200 rounded-md hover:border-blue-400 hover:text-blue-600 transition-colors">통감</button>
+                            <button onclick="selectNodeById('C_01')" class="px-2 py-1 text-[11px] bg-white border border-slate-200 rounded-md hover:border-blue-400 hover:text-blue-600 transition-colors">한국 정부</button>
+                            <button onclick="selectNodeById('P_01')" class="px-2 py-1 text-[11px] bg-white border border-slate-200 rounded-md hover:border-blue-400 hover:text-blue-600 transition-colors">이완용</button>
+                            <button onclick="selectNodeById('P_02')" class="px-2 py-1 text-[11px] bg-white border border-slate-200 rounded-md hover:border-blue-400 hover:text-blue-600 transition-colors">이토 히로부미</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 사료 원문 모달 -->
+    <div id="source-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden select-text">
+            <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">기준 사료 원문: 한일 협약(韓日協約, 1907년 7월 24일)</h3>
+                    <p class="text-xs text-slate-500">본 지식 그래프의 모든 클래스·노드·관계는 아래 텍스트만을 근거로 추출되었습니다.</p>
+                </div>
+                <button id="close-source-modal" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60">✕</button>
+            </div>
+            <div class="p-5 overflow-y-auto text-sm leading-relaxed text-slate-700 space-y-3 font-serif bg-white">
+                <p class="font-bold text-base text-slate-900">〈한일 협약〉</p>
+                <p>일본국(日本國) 정부와 한국(韓國) 정부는 속히 한국의 부강을 도모하고 한국 국민의 행복을 증진시키려는 목적으로 이하의 조관(條款)을 약정한다.</p>
+                <div class="pl-3 border-l-2 border-slate-200 space-y-2 text-[13.5px]">
+                    <p><strong>제1조</strong> 한국 정부는 시정(施政) 개선에 관하여 통감(統監)의 지도를 받을 것이다.</p>
+                    <p><strong>제2조</strong> 한국 정부의 법령의 제정 및 중요한 행정상의 처분은 미리 통감의 승인을 거칠 것이다.</p>
+                    <p><strong>제3조</strong> 한국의 사법 사무는 일반 행정 사무와 구별할 것이다.</p>
+                    <p><strong>제4조</strong> 한국의 고등 관리(高等官吏)를 임명하고 해임시키는 것은 통감의 동의에 의하여 집행할 것이다.</p>
+                    <p><strong>제5조</strong> 한국 정부는 통감이 추천한 일본 사람을 한국의 관리로 임명할 것이다.</p>
+                    <p><strong>제6조</strong> 한국 정부는 통감의 동의가 없이 외국인을 초빙하여 고용하지 말 것이다.</p>
+                    <p><strong>제7조</strong> 명치 37년 8월 22일에 조인한 한일 협약 제1항을 폐지할 것이다.</p>
+                </div>
+                <p>이상을 증거하기 위하여 아래의 이름들은 각각 본 국 정부에서 해당한 위임을 받아서 본 협약에 이름을 적고 조인한다.</p>
+                <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs space-y-1 font-sans">
+                    <p><strong>광무(光武) 11년 7월 24일</strong> — 내각 총리대신(內閣總理大臣) 훈 2등 이완용(李完用)</p>
+                    <p><strong>명치(明治) 40년 7월 24일</strong> — 통감(統監) 후작(侯爵) 이토 히로부미〔伊藤博文〕</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // 1. 온톨로지 클래스(Class) 메타데이터 정의 (학술적 팔레트 및 도형/아이콘 매핑)
+        // ============================================================================
+        const CLASS_CONFIG = {
+            Treaty: {
+                id: 'Treaty',
+                koName: '조약 / 협약',
+                color: '#EA580C',       // Deep Orange
+                bgLight: '#FFF7ED',
+                borderColor: '#FDBA74',
+                shape: 'hexagon',
+                radius: 26,
+                icon: '📜',
+                description: '체결된 외교 문서 및 조항 폐지 대상이 되는 기존 조약'
+            },
+            Country: {
+                id: 'Country',
+                koName: '국가 / 정부',
+                color: '#059669',       // Emerald Green
+                bgLight: '#ECFDF5',
+                borderColor: '#6EE7B7',
+                shape: 'circle',
+                radius: 24,
+                icon: '🏛️',
+                description: '협약의 체결 당사국이자 행정·통치 행위의 주체'
+            },
+            Organization_Position: {
+                id: 'Organization_Position',
+                koName: '직책 / 기관',
+                color: '#7C3AED',       // Royal Purple
+                bgLight: '#F5F3FF',
+                borderColor: '#C4B5FD',
+                shape: 'diamond',
+                radius: 24,
+                icon: '⚖️',
+                description: '협약에 명시된 통치 기구, 관직 및 고위 직위'
+            },
+            Person: {
+                id: 'Person',
+                koName: '인물 (대표자)',
+                color: '#2563EB',       // Cobalt Blue
+                bgLight: '#EFF6FF',
+                borderColor: '#93C5FD',
+                shape: 'roundedRect',
+                radius: 21,
+                icon: '👤',
+                description: '본국 정부의 위임을 받아 협약에 이름을 적고 조인한 전권 대표'
+            },
+            Article: {
+                id: 'Article',
+                koName: '조항 (제1조~제7조)',
+                color: '#0284C7',       // Sky Blue
+                bgLight: '#F0F9FF',
+                borderColor: '#7DD3FC',
+                shape: 'circle',
+                radius: 15,
+                icon: '§',
+                description: '한일 협약(1907)을 구성하는 7개의 세부 약정 조관(條款)'
+            },
+            Concept_Action: {
+                id: 'Concept_Action',
+                koName: '행정 · 권한 행위',
+                color: '#0D9488',       // Teal
+                bgLight: '#F0FDFA',
+                borderColor: '#5EEAD4',
+                shape: 'pill',
+                radius: 19,
+                icon: '⚙️',
+                description: '조항에 규정된 구체적 시정, 입법, 사법 분리 및 인사 행위'
+            },
+            Date: {
+                id: 'Date',
+                koName: '날짜 / 연호',
+                color: '#B45309',       // Amber Brown
+                bgLight: '#FFFBEB',
+                borderColor: '#FCD34D',
+                shape: 'roundedRect',
+                radius: 18,
+                icon: '📅',
+                description: '협약 체결일 및 기존 조약의 조인 시점(광무·명치 연호)'
+            }
+        };
+
+        // ============================================================================
+        // 2. 노드(Nodes) 데이터 정의 (요구사항 및 사료 원문 기반 22개 개체)
+        // ============================================================================
+        const rawNodes = [
+            // Treaty
+            {
+                id: 'T_01',
+                class: 'Treaty',
+                label: '한일 협약(1907)',
+                sublabel: 'T_01 · 정미7조약',
+                originalText: '한일 협약(韓日協約)',
+                attributes: {
+                    '체결 목적': '속히 한국의 부강을 도모하고 한국 국민의 행복을 증진',
+                    '구성': '전문 및 제1조 ~ 제7조',
+                    '체결일': '광무 11년 / 명치 40년 7월 24일'
+                },
+                fx_init: 0, fy_init: 0
+            },
+            {
+                id: 'T_02',
+                class: 'Treaty',
+                label: '한일 협약(1904)',
+                sublabel: 'T_02 · 폐지 대상 조항 포함',
+                originalText: '명치 37년 8월 22일에 조인한 한일 협약',
+                attributes: {
+                    '조치 내용': '제7조에 의거하여 동 협약 제1항 폐지',
+                    '조인 시점': '명치 37년(1904년) 8월 22일'
+                },
+                fx_init: 0, fy_init: 240
+            },
+
+            // Country
+            {
+                id: 'C_01',
+                class: 'Country',
+                label: '한국 정부',
+                sublabel: 'C_01 · 당사국',
+                originalText: '한국(韓國) 정부',
+                attributes: {
+                    '역할': '협약 체결 당사국, 통감 지도·승인·동의 대상 주체',
+                    '전권 서명자': '내각 총리대신 훈 2등 이완용'
+                },
+                fx_init: -210, fy_init: -20
+            },
+            {
+                id: 'C_02',
+                class: 'Country',
+                label: '일본국 정부',
+                sublabel: 'C_02 · 당사국',
+                originalText: '일본국(日本國) 정부',
+                attributes: {
+                    '역할': '협약 체결 당사국',
+                    '전권 서명자': '통감 후작 이토 히로부미'
+                },
+                fx_init: 210, fy_init: -20
+            },
+
+            // Organization_Position
+            {
+                id: 'OP_01',
+                class: 'Organization_Position',
+                label: '통감',
+                sublabel: 'OP_01 · 최고 감독 직위',
+                originalText: '통감(統監)',
+                attributes: {
+                    '핵심 권한': '시정 지도(1조), 법령·중요행정 사전승인(2조), 고등관리 임면동의(4조), 일본인 관리 추천(5조), 외국인 고용 동의(6조)',
+                    '당시 재임자': '후작 이토 히로부미'
+                },
+                fx_init: 0, fy_init: -220
+            },
+            {
+                id: 'OP_02',
+                class: 'Organization_Position',
+                label: '내각 총리대신',
+                sublabel: 'OP_02 · 한국 관직',
+                originalText: '내각 총리대신(內閣總理大臣) 훈 2등',
+                attributes: {
+                    '훈등': '훈 2등',
+                    '재임자': '이완용(李完用)'
+                },
+                fx_init: -360, fy_init: 130
+            },
+            {
+                id: 'OP_03',
+                class: 'Organization_Position',
+                label: '한국의 관리/고등 관리',
+                sublabel: 'OP_03 · 인사 통제 대상',
+                originalText: '한국의 고등 관리(高等官吏) / 한국의 관리',
+                attributes: {
+                    '제4조 규정': '고등 관리 임명·해임 시 통감의 동의 필요',
+                    '제5조 규정': '통감이 추천한 일본 사람을 한국의 관리로 임명'
+                },
+                fx_init: 250, fy_init: -230
+            },
+
+            // Person
+            {
+                id: 'P_01',
+                class: 'Person',
+                label: '이완용',
+                sublabel: 'P_01 · 한국 대표',
+                originalText: '내각 총리대신(內閣總理大臣) 훈 2등 이완용(李完用)',
+                attributes: {
+                    '직위 및 훈등': '내각 총리대신 훈 2등',
+                    '위임 주체': '한국 정부'
+                },
+                fx_init: -350, fy_init: 30
+            },
+            {
+                id: 'P_02',
+                class: 'Person',
+                label: '이토 히로부미',
+                sublabel: 'P_02 · 일본 대표',
+                originalText: '통감(統監) 후작(侯爵) 이토 히로부미〔伊藤博文〕',
+                attributes: {
+                    '직위 및 작위': '통감, 후작(侯爵)',
+                    '위임 주체': '일본국 정부'
+                },
+                fx_init: 330, fy_init: -110
+            },
+
+            // Date
+            {
+                id: 'D_01',
+                class: 'Date',
+                label: '1907년 7월 24일',
+                sublabel: '광무 11년 / 명치 40년',
+                originalText: '광무(光武) 11년 7월 24일 / 명치(明治) 40년 7월 24일',
+                attributes: {
+                    '한국 연호': '광무(光武) 11년 7월 24일',
+                    '일본 연호': '명치(明治) 40년 7월 24일'
+                },
+                fx_init: -180, fy_init: 190
+            },
+            {
+                id: 'D_02',
+                class: 'Date',
+                label: '1904년 8월 22일',
+                sublabel: '명치 37년',
+                originalText: '명치 37년 8월 22일',
+                attributes: {
+                    '일본 연호': '명치(明治) 37년 8월 22일',
+                    '관련 협약': '제1차 한일 협약(한일외국인고문용빙에 관한 협정)'
+                },
+                fx_init: 180, fy_init: 240
+            },
+
+            // Concept_Action
+            {
+                id: 'CA_01',
+                class: 'Concept_Action',
+                label: '시정 개선',
+                sublabel: 'CA_01 · 제1조 대상',
+                originalText: '시정(施政) 개선에 관하여 통감(統監)의 지도를 받을 것이다',
+                attributes: {
+                    '근거 조항': '제1조',
+                    '감독 방식': '통감의 지도'
+                },
+                fx_init: -190, fy_init: -230
+            },
+            {
+                id: 'CA_02',
+                class: 'Concept_Action',
+                label: '법령 제정 및 중요 행정 처분',
+                sublabel: 'CA_02 · 제2조 대상',
+                originalText: '법령의 제정 및 중요한 행정상의 처분은 미리 통감의 승인을 거칠 것이다',
+                attributes: {
+                    '근거 조항': '제2조',
+                    '감독 방식': '통감의 사전 승인'
+                },
+                fx_init: 0, fy_init: -350
+            },
+            {
+                id: 'CA_03',
+                class: 'Concept_Action',
+                label: '사법 사무와 일반 행정 사무 구별',
+                sublabel: 'CA_03 · 제3조 대상',
+                originalText: '한국의 사법 사무는 일반 행정 사무와 구별할 것이다',
+                attributes: {
+                    '근거 조항': '제3조',
+                    '집행 주체': '한국 정부'
+                },
+                fx_init: -380, fy_init: -90
+            },
+            {
+                id: 'CA_04',
+                class: 'Concept_Action',
+                label: '외국인 초빙·고용',
+                sublabel: 'CA_04 · 제6조 대상',
+                originalText: '통감의 동의가 없이 외국인을 초빙하여 고용하지 말 것이다',
+                attributes: {
+                    '근거 조항': '제6조',
+                    '제한 조건': '통감의 동의 없이 금지'
+                },
+                fx_init: -340, fy_init: -185
+            },
+
+            // Article (제1조 ~ 제7조)
+            {
+                id: 'A_01',
+                class: 'Article',
+                label: '제1조',
+                sublabel: '시정 지도',
+                originalText: '제1조 한국 정부는 시정(施政) 개선에 관하여 통감(統監)의 지도를 받을 것이다.',
+                attributes: { '핵심 내용': '통감의 시정 개선 지도권' },
+                fx_init: -95, fy_init: -85
+            },
+            {
+                id: 'A_02',
+                class: 'Article',
+                label: '제2조',
+                sublabel: '사전 승인',
+                originalText: '제2조 한국 정부의 법령의 제정 및 중요한 행정상의 처분은 미리 통감의 승인을 거칠 것이다.',
+                attributes: { '핵심 내용': '법령 제정 및 중요 행정 처분에 대한 통감의 사전 승인권' },
+                fx_init: -45, fy_init: -105
+            },
+            {
+                id: 'A_03',
+                class: 'Article',
+                label: '제3조',
+                sublabel: '사법·행정 구별',
+                originalText: '제3조 한국의 사법 사무는 일반 행정 사무와 구별할 것이다.',
+                attributes: { '핵심 내용': '사법 사무와 일반 행정 사무의 분리' },
+                fx_init: -105, fy_init: 35
+            },
+            {
+                id: 'A_04',
+                class: 'Article',
+                label: '제4조',
+                sublabel: '고등관리 임면동의',
+                originalText: '제4조 한국의 고등 관리(高等官吏)를 임명하고 해임시키는 것은 통감의 동의에 의하여 집행할 것이다.',
+                attributes: { '핵심 내용': '한국 고등 관리 임면에 대한 통감의 동의권' },
+                fx_init: 50, fy_init: -105
+            },
+            {
+                id: 'A_05',
+                class: 'Article',
+                label: '제5조',
+                sublabel: '일본인 관리 임명',
+                originalText: '제5조 한국 정부는 통감이 추천한 일본 사람을 한국의 관리로 임명할 것이다.',
+                attributes: { '핵심 내용': '통감 추천 일본인의 한국 관리 임명 의무' },
+                fx_init: 100, fy_init: -75
+            },
+            {
+                id: 'A_06',
+                class: 'Article',
+                label: '제6조',
+                sublabel: '외국인 고용 동의',
+                originalText: '제6조 한국 정부는 통감의 동의가 없이 외국인을 초빙하여 고용하지 말 것이다.',
+                attributes: { '핵심 내용': '통감 동의 없는 외국인 초빙·고용 금지' },
+                fx_init: -85, fy_init: 90
+            },
+            {
+                id: 'A_07',
+                class: 'Article',
+                label: '제7조',
+                sublabel: '1904 협약 1항 폐지',
+                originalText: '제7조 명치 37년 8월 22일에 조인한 한일 협약 제1항을 폐지할 것이다.',
+                attributes: { '핵심 내용': '1904년 한일 협약 제1항(재정고문 용빙) 폐지' },
+                fx_init: 80, fy_init: 85
+            }
+        ];
+
+        // ============================================================================
+        // 3. 관계(Edges / Triples) 데이터 정의 (요구사항 22개 관계 완벽 반영)
+        // ============================================================================
+        const rawLinks = [
+            // 당사국 조인 및 체결일
+            { id: 'L_01', source: 'C_01', target: 'T_01', label: '조인하다', article: '전문·말미', detail: '한국 정부가 본 협약에 조인하여 약정함' },
+            { id: 'L_02', target: 'T_01', source: 'C_02', label: '조인하다', article: '전문·말미', detail: '일본국 정부가 본 협약에 조인하여 약정함' },
+            { id: 'L_03', source: 'T_01', target: 'D_01', label: '체결일', article: '말미', detail: '광무 11년(명치 40년) 7월 24일 조인' },
+
+            // 전권 대표 직위 및 위임 서명
+            { id: 'L_04', source: 'P_01', target: 'OP_02', label: '직위보유', article: '말미', detail: '이완용이 내각 총리대신(훈 2등) 직위를 보유함' },
+            { id: 'L_05', source: 'P_01', target: 'C_01', label: '정부위임서명', article: '말미', detail: '한국 정부에서 위임을 받아 협약에 이름을 적고 조인함' },
+            { id: 'L_06', source: 'P_02', target: 'OP_01', label: '직위보유', article: '말미', detail: '이토 히로부미(후작)가 통감 직위를 보유함' },
+            { id: 'L_07', source: 'P_02', target: 'C_02', label: '정부위임서명', article: '말미', detail: '일본국 정부에서 위임을 받아 협약에 이름을 적고 조인함' },
+
+            // 협약 -> 조항 포함 (제1조 ~ 제7조)
+            { id: 'L_08', source: 'T_01', target: 'A_01', label: '조항포함', article: '제1조', detail: '한일 협약(1907)의 제1조 조관' },
+            { id: 'L_09', source: 'T_01', target: 'A_02', label: '조항포함', article: '제2조', detail: '한일 협약(1907)의 제2조 조관' },
+            { id: 'L_10', source: 'T_01', target: 'A_03', label: '조항포함', article: '제3조', detail: '한일 협약(1907)의 제3조 조관' },
+            { id: 'L_11', source: 'T_01', target: 'A_04', label: '조항포함', article: '제4조', detail: '한일 협약(1907)의 제4조 조관' },
+            { id: 'L_12', source: 'T_01', target: 'A_05', label: '조항포함', article: '제5조', detail: '한일 협약(1907)의 제5조 조관' },
+            { id: 'L_13', source: 'T_01', target: 'A_06', label: '조항포함', article: '제6조', detail: '한일 협약(1907)의 제6조 조관' },
+            { id: 'L_14', source: 'T_01', target: 'A_07', label: '조항포함', article: '제7조', detail: '한일 협약(1907)의 제7조 조관' },
+
+            // 조항별 핵심 권력·통제 관계
+            { id: 'L_15', source: 'OP_01', target: 'C_01', label: '지도하다(제1조)', article: '제1조', detail: '한국 정부는 시정 개선에 관하여 통감의 지도를 받음' },
+            { id: 'L_16', source: 'OP_01', target: 'CA_01', label: '지도대상(제1조)', article: '제1조', detail: '통감의 지도가 미치는 구체적 영역은 시정 개선임' },
+            { id: 'L_17', source: 'OP_01', target: 'CA_02', label: '사전승인하다(제2조)', article: '제2조', detail: '한국 정부의 법령 제정 및 중요한 행정상의 처분은 미리 통감의 승인을 거침' },
+            { id: 'L_18', source: 'C_01', target: 'CA_03', label: '구별집행하다(제3조)', article: '제3조', detail: '한국의 사법 사무는 일반 행정 사무와 구별함' },
+            { id: 'L_19', source: 'OP_01', target: 'OP_03', label: '임면동의하다(제4조)', article: '제4조', detail: '한국의 고등 관리를 임명하고 해임시키는 것은 통감의 동의에 의하여 집행함' },
+            { id: 'L_20', source: 'OP_01', target: 'OP_03', label: '일본인관리추천(제5조)', article: '제5조', detail: '한국 정부는 통감이 추천한 일본 사람을 한국의 관리로 임명함' },
+            { id: 'L_21', source: 'C_01', target: 'CA_04', label: '통감동의없이금지(제6조)', article: '제6조', detail: '한국 정부는 통감의 동의 없이 외국인을 초빙하여 고용하지 못함' },
+            { id: 'L_22', source: 'T_01', target: 'T_02', label: '제1항폐지(제7조)', article: '제7조', detail: '명치 37년 8월 22일에 조인한 한일 협약 제1항을 폐지함' },
+            { id: 'L_23', source: 'T_02', target: 'D_02', label: '체결일', article: '제7조', detail: '폐지 대상 조항이 포함된 기존 협약의 조인일(명치 37년 8월 22일)' }
+        ];
+
+        // ============================================================================
+        // 4. 애플리케이션 상태 관리
+        // ============================================================================
+        const state = {
+            activeClasses: new Set(Object.keys(CLASS_CONFIG)),
+            showEdgeLabels: true,
+            showArticles: true,
+            searchQuery: '',
+            selectedNodeId: null,
+            selectedLinkId: null
+        };
+
+        // ============================================================================
+        // 5. 좌측 클래스 필터 UI 렌더링
+        // ============================================================================
+        function renderClassFilters() {
+            const container = document.getElementById('class-filter-list');
+            container.innerHTML = '';
+
+            Object.values(CLASS_CONFIG).forEach(cls => {
+                const count = rawNodes.filter(n => n.class === cls.id).length;
+                const isActive = state.activeClasses.has(cls.id);
+
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = `w-full flex items-center justify-between px-2.5 py-2 rounded-lg border text-left transition-all ${
+                    isActive
+                        ? 'bg-white border-slate-200 shadow-2xs hover:border-slate-300'
+                        : 'bg-slate-50/60 border-transparent opacity-50 hover:opacity-80'
+                }`;
+
+                item.innerHTML = `
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="w-3.5 h-3.5 rounded-sm shrink-0 flex items-center justify-center text-[9px] text-white font-bold"
+                              style="background-color: ${cls.color}; border-radius: ${cls.shape === 'circle' ? '9999px' : '3px'}">
+                        </span>
+                        <div class="truncate">
+                            <div class="text-xs font-semibold text-slate-800 truncate">${cls.koName}</div>
+                            <div class="text-[10px] text-slate-400 font-mono truncate">${cls.id}</div>
+                        </div>
+                    </div>
+                    <span class="text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 ml-1">${count}</span>
+                `;
+
+                item.addEventListener('click', () => {
+                    if (state.activeClasses.has(cls.id)) {
+                        state.activeClasses.delete(cls.id);
+                    } else {
+                        state.activeClasses.add(cls.id);
+                    }
+                    if (cls.id === 'Article') {
+                        state.showArticles = state.activeClasses.has('Article');
+                        document.getElementById('toggle-articles').checked = state.showArticles;
+                    }
+                    renderClassFilters();
+                    updateGraphVisibility();
+                });
+
+                container.appendChild(item);
+            });
+        }
+
+        // ============================================================================
+        // 6. D3.js 포스 다이렉티드 지식 그래프 초기화 및 렌더링
+        // ============================================================================
+        const svg = d3.select('#kg-svg');
+        const containerEl = document.getElementById('graph-container');
+        let width = containerEl.clientWidth;
+        let height = containerEl.clientHeight;
+
+        // 화살표 마커 정의 (기본, 강조, 흐림)
+        const defs = svg.append('defs');
+
+        function createArrowMarker(id, color) {
+            defs.append('marker')
+                .attr('id', id)
+                .attr('viewBox', '0 -5 10 10')
+                .attr('refX', 28)
+                .attr('refY', 0)
+                .attr('markerWidth', 6.5)
+                .attr('markerHeight', 6.5)
+                .attr('orient', 'auto')
+                .append('path')
+                .attr('d', 'M0,-4.5L9,0L0,4.5Z')
+                .attr('fill', color);
+        }
+
+        createArrowMarker('arrow-default', '#94A3B8');
+        createArrowMarker('arrow-highlight', '#2563EB');
+        createArrowMarker('arrow-article', '#BAE6FD');
+
+        // 줌/팬 레이어
+        const zoomGroup = svg.append('g').attr('class', 'zoom-layer');
+        const linkLayer = zoomGroup.append('g').attr('class', 'links-layer');
+        const nodeLayer = zoomGroup.append('g').attr('class', 'nodes-layer');
+
+        // 줌 동작 설정
+        const zoomBehavior = d3.zoom()
+            .scaleExtent([0.25, 3])
+            .on('zoom', (event) => {
+                zoomGroup.attr('transform', event.transform);
+            });
+
+        svg.call(zoomBehavior);
+
+        // 배경 클릭 시 선택 해제
+        svg.on('click', (event) => {
+            if (event.target === svg.node()) {
+                clearSelection();
+            }
+        });
+
+        // 노드·링크 데이터 복제 및 초기 좌표 설정
+        const nodes = rawNodes.map(d => ({
+            ...d,
+            x: width / 2 + (d.fx_init || 0),
+            y: height / 2 + (d.fy_init || 0)
+        }));
+
+        // 동일 노드 쌍 사이의 다중 엣지(예: OP_01 -> OP_03 제4조·제5조) 곡률 계산
+        const pairCount = {};
+        rawLinks.forEach(l => {
+            const key = [l.source, l.target].sort().join('--');
+            pairCount[key] = (pairCount[key] || 0) + 1;
+        });
+        const pairIndex = {};
+        const links = rawLinks.map(l => {
+            const key = [l.source, l.target].sort().join('--');
+            const total = pairCount[key];
+            const idx = pairIndex[key] || 0;
+            pairIndex[key] = idx + 1;
+            let curveOffset = 0;
+            if (total > 1) {
+                curveOffset = (idx - (total - 1) / 2) * 44;
+            }
+            return { ...l, curveOffset };
+        });
+
+        // D3 Force Simulation 구성
+        const simulation = d3.forceSimulation(nodes)
+            .force('link', d3.forceLink(links)
+                .id(d => d.id)
+                .distance(d => {
+                    if (d.target.class === 'Article' || d.source.class === 'Article') return 110;
+                    return 185;
+                })
+                .strength(0.45)
+            )
+            .force('charge', d3.forceManyBody().strength(d => d.class === 'Article' ? -380 : -750))
+            .force('center', d3.forceCenter(width / 2, height / 2).strength(0.05))
+            .force('collide', d3.forceCollide().radius(d => CLASS_CONFIG[d.class].radius + 28).iterations(2));
+
+        // ----------------------------------------------------------------------------
+        // 엣지(링크) 렌더링
+        // ----------------------------------------------------------------------------
+        const linkSelection = linkLayer.selectAll('.link-group')
+            .data(links)
+            .enter()
+            .append('g')
+            .attr('class', 'link-group')
+            .attr('id', d => `link-${d.id}`);
+
+        // 클릭 영역 확장용 투명 패스
+        const linkHitAreas = linkSelection.append('path')
+            .attr('class', 'link-hitarea');
+
+        // 실제 보이는 화살표 선
+        const linkPaths = linkSelection.append('path')
+            .attr('class', 'link-path')
+            .attr('stroke', d => d.label === '조항포함' ? '#BAE6FD' : '#94A3B8')
+            .attr('stroke-width', d => d.label === '조항포함' ? 1.3 : 1.7)
+            .attr('stroke-dasharray', d => d.label === '조항포함' ? '4,3' : null)
+            .attr('marker-end', d => d.label === '조항포함' ? 'url(#arrow-article)' : 'url(#arrow-default)');
+
+        // 관계 라벨 배지 그룹
+        const linkLabelGroups = linkSelection.append('g')
+            .attr('class', 'link-label-group');
+
+        const linkLabelRects = linkLabelGroups.append('rect')
+            .attr('class', 'link-label-bg');
+
+        const linkTexts = linkLabelGroups.append('text')
+            .attr('class', 'link-label')
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'central')
+            .text(d => d.label);
+
+        // 텍스트 너비 기반 라벨 배경 박스 크기 조정
+        linkTexts.each(function() {
+            const bbox = this.getBBox();
+            d3.select(this.parentNode).select('rect')
+                .attr('x', -bbox.width / 2 - 5)
+                .attr('y', -bbox.height / 2 - 2)
+                .attr('width', bbox.width + 10)
+                .attr('height', bbox.height + 4);
+        });
+
+        // 엣지 인터랙션 이벤트
+        linkSelection
+            .on('mouseenter', (event, d) => handleLinkHover(d, true))
+            .on('mouseleave', (event, d) => handleLinkHover(d, false))
+            .on('click', (event, d) => {
+                event.stopPropagation();
+                selectLink(d);
+            });
+
+        // ----------------------------------------------------------------------------
+        // 노드 렌더링 (클래스별 차별화된 SVG 도형)
+        // ----------------------------------------------------------------------------
+        function getHexagonPoints(r) {
+            const pts = [];
+            for (let i = 0; i < 6; i++) {
+                const angle = (Math.PI / 3) * i - Math.PI / 6;
+                pts.push(`${r * Math.cos(angle)},${r * Math.sin(angle)}`);
+            }
+            return pts.join(' ');
+        }
+
+        function getDiamondPoints(r) {
+            const d = r * 1.15;
+            return `0,${-d} ${d},0 0,${d} ${-d},0`;
+        }
+
+        const nodeSelection = nodeLayer.selectAll('.node-group')
+            .data(nodes)
+            .enter()
+            .append('g')
+            .attr('class', 'node-group')
+            .attr('id', d => `node-${d.id}`)
+            .call(d3.drag()
+                .on('start', dragStarted)
+                .on('drag', dragged)
+                .on('end', dragEnded)
+            );
+
+        // 클래스별 도형 추가
+        nodeSelection.each(function(d) {
+            const g = d3.select(this);
+            const cfg = CLASS_CONFIG[d.class];
+
+            if (cfg.shape === 'hexagon') {
+                g.append('polygon')
+                    .attr('class', 'node-shape')
+                    .attr('points', getHexagonPoints(cfg.radius))
+                    .attr('fill', cfg.color)
+                    .attr('stroke', '#FFFFFF')
+                    .attr('stroke-width', 2.5);
+            } else if (cfg.shape === 'diamond') {
+                g.append('polygon')
+                    .attr('class', 'node-shape')
+                    .attr('points', getDiamondPoints(cfg.radius))
+                    .attr('fill', cfg.color)
+                    .attr('stroke', '#FFFFFF')
+                    .attr('stroke-width', 2.5);
+            } else if (cfg.shape === 'roundedRect') {
+                const w = cfg.radius * 2.1;
+                const h = cfg.radius * 1.65;
+                g.append('rect')
+                    .attr('class', 'node-shape')
+                    .attr('x', -w / 2)
+                    .attr('y', -h / 2)
+                    .attr('width', w)
+                    .attr('height', h)
+                    .attr('rx', 8)
+                    .attr('ry', 8)
+                    .attr('fill', cfg.color)
+                    .attr('stroke', '#FFFFFF')
+                    .attr('stroke-width', 2.5);
+            } else if (cfg.shape === 'pill') {
+                const w = cfg.radius * 2.1;
+                const h = cfg.radius * 1.5;
+                g.append('rect')
+                    .attr('class', 'node-shape')
+                    .attr('x', -w / 2)
+                    .attr('y', -h / 2)
+                    .attr('width', w)
+                    .attr('height', h)
+                    .attr('rx', h / 2)
+                    .attr('ry', h / 2)
+                    .attr('fill', cfg.color)
+                    .attr('stroke', '#FFFFFF')
+                    .attr('stroke-width', 2.5);
+            } else {
+                // circle
+                g.append('circle')
+                    .attr('class', 'node-shape')
+                    .attr('r', cfg.radius)
+                    .attr('fill', cfg.color)
+                    .attr('stroke', '#FFFFFF')
+                    .attr('stroke-width', 2.5);
+            }
+
+            // 노드 내부 아이콘/심볼
+            g.append('text')
+                .attr('text-anchor', 'middle')
+                .attr('dominant-baseline', 'central')
+                .attr('fill', '#FFFFFF')
+                .attr('font-size', d.class === 'Article' ? '11px' : '14px')
+                .attr('font-weight', '700')
+                .attr('pointer-events', 'none')
+                .text(d.class === 'Article' ? d.label.replace('제', '').replace('조', '') : cfg.icon);
+
+            // 노드 하단 메인 라벨
+            g.append('text')
+                .attr('class', 'node-label')
+                .attr('text-anchor', 'middle')
+                .attr('y', cfg.radius + 14)
+                .text(d.label);
+
+            // 노드 하단 보조 라벨 (조항 노드는 간결함을 위해 생략)
+            if (d.class !== 'Article') {
+                g.append('text')
+                    .attr('class', 'node-sublabel')
+                    .attr('text-anchor', 'middle')
+                    .attr('y', cfg.radius + 26)
+                    .text(d.sublabel);
+            }
+        });
+
+        // 노드 인터랙션 이벤트
+        nodeSelection
+            .on('mouseenter', (event, d) => handleNodeHover(d, true))
+            .on('mouseleave', (event, d) => handleNodeHover(d, false))
+            .on('click', (event, d) => {
+                event.stopPropagation();
+                selectNode(d);
+            });
+
+        // ----------------------------------------------------------------------------
+        // 시뮬레이션 틱(Tick) 경로 및 좌표 업데이트
+        // ----------------------------------------------------------------------------
+        function computeLinkPath(d) {
+            const sx = d.source.x;
+            const sy = d.source.y;
+            const tx = d.target.x;
+            const ty = d.target.y;
+
+            if (!d.curveOffset || d.curveOffset === 0) {
+                return {
+                    path: `M${sx},${sy} L${tx},${ty}`,
+                    labelX: (sx + tx) / 2,
+                    labelY: (sy + ty) / 2
+                };
+            }
+
+            // 곡선 제어점 계산 (수직 법선 벡터 방향 오프셋)
+            const dx = tx - sx;
+            const dy = ty - sy;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const nx = -dy / len;
+            const ny = dx / len;
+            const cx = (sx + tx) / 2 + nx * d.curveOffset;
+            const cy = (sy + ty) / 2 + ny * d.curveOffset;
+
+            // 이차 베지어 곡선의 t=0.5 중점 좌표
+            const labelX = 0.25 * sx + 0.5 * cx + 0.25 * tx;
+            const labelY = 0.25 * sy + 0.5 * cy + 0.25 * ty;
+
+            return {
+                path: `M${sx},${sy} Q${cx},${cy} ${tx},${ty}`,
+                labelX,
+                labelY
+            };
+        }
+
+        simulation.on('tick', () => {
+            linkSelection.each(function(d) {
+                const geom = computeLinkPath(d);
+                const g = d3.select(this);
+                g.select('.link-path').attr('d', geom.path);
+                g.select('.link-hitarea').attr('d', geom.path);
+                g.select('.link-label-group').attr('transform', `translate(${geom.labelX}, ${geom.labelY})`);
+            });
+
+            nodeSelection.attr('transform', d => `translate(${d.x}, ${d.y})`);
+        });
+
+        // 드래그 핸들러
+        function dragStarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.25).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragEnded(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            // 사용자가 드래그한 위치 고정 (직관적 그래프 배치를 위해 유지)
+        }
+
+        // ============================================================================
+        // 7. 호버(Highlight) 및 필터링 로직
+        // ============================================================================
+        function handleNodeHover(hoveredNode, isEnter) {
+            if (!isEnter) {
+                if (state.selectedNodeId) {
+                    const selNode = nodes.find(n => n.id === state.selectedNodeId);
+                    if (selNode) highlightNeighbors(selNode);
+                } else if (state.selectedLinkId) {
+                    const selLink = links.find(l => l.id === state.selectedLinkId);
+                    if (selLink) highlightSingleLink(selLink);
+                } else {
+                    resetHighlight();
+                }
+                return;
+            }
+            highlightNeighbors(hoveredNode);
+        }
+
+        function handleLinkHover(hoveredLink, isEnter) {
+            if (!isEnter) {
+                if (state.selectedNodeId) {
+                    const selNode = nodes.find(n => n.id === state.selectedNodeId);
+                    if (selNode) highlightNeighbors(selNode);
+                } else if (state.selectedLinkId) {
+                    const selLink = links.find(l => l.id === state.selectedLinkId);
+                    if (selLink) highlightSingleLink(selLink);
+                } else {
+                    resetHighlight();
+                }
+                return;
+            }
+            highlightSingleLink(hoveredLink);
+        }
+
+        function highlightNeighbors(targetNode) {
+            const connectedNodeIds = new Set([targetNode.id]);
+            const connectedLinkIds = new Set();
+
+            links.forEach(l => {
+                if (l.source.id === targetNode.id || l.target.id === targetNode.id) {
+                    connectedNodeIds.add(l.source.id);
+                    connectedNodeIds.add(l.target.id);
+                    connectedLinkIds.add(l.id);
+                }
+            });
+
+            nodeSelection.classed('dimmed', d => !connectedNodeIds.has(d.id));
+            linkSelection
+                .classed('dimmed', d => !connectedLinkIds.has(d.id))
+                .classed('highlighted-link', d => connectedLinkIds.has(d.id));
+
+            linkPaths.attr('marker-end', d => {
+                if (connectedLinkIds.has(d.id)) return 'url(#arrow-highlight)';
+                return d.label === '조항포함' ? 'url(#arrow-article)' : 'url(#arrow-default)';
+            });
+        }
+
+        function highlightSingleLink(targetLink) {
+            const connectedNodeIds = new Set([targetLink.source.id, targetLink.target.id]);
+
+            nodeSelection.classed('dimmed', d => !connectedNodeIds.has(d.id));
+            linkSelection
+                .classed('dimmed', d => d.id !== targetLink.id)
+                .classed('highlighted-link', d => d.id === targetLink.id);
+
+            linkPaths.attr('marker-end', d => {
+                if (d.id === targetLink.id) return 'url(#arrow-highlight)';
+                return d.label === '조항포함' ? 'url(#arrow-article)' : 'url(#arrow-default)';
+            });
+        }
+
+        function resetHighlight() {
+            nodeSelection.classed('dimmed', false);
+            linkSelection
+                .classed('dimmed', false)
+                .classed('highlighted-link', false);
+            linkPaths.attr('marker-end', d => d.label === '조항포함' ? 'url(#arrow-article)' : 'url(#arrow-default)');
+        }
+
+        function updateGraphVisibility() {
+            const query = state.searchQuery.trim().toLowerCase();
+
+            const visibleNodeIds = new Set();
+            nodes.forEach(n => {
+                const classVisible = state.activeClasses.has(n.class);
+                const matchesSearch = !query ||
+                    n.label.toLowerCase().includes(query) ||
+                    n.id.toLowerCase().includes(query) ||
+                    n.originalText.toLowerCase().includes(query) ||
+                    n.sublabel.toLowerCase().includes(query);
+
+                if (classVisible && matchesSearch) {
+                    visibleNodeIds.add(n.id);
+                }
+            });
+
+            nodeSelection.style('display', d => visibleNodeIds.has(d.id) ? null : 'none');
+
+            let visibleLinkCount = 0;
+            linkSelection.style('display', d => {
+                const show = visibleNodeIds.has(d.source.id) && visibleNodeIds.has(d.target.id);
+                if (show) visibleLinkCount++;
+                return show ? null : 'none';
+            });
+
+            linkLabelGroups.style('display', state.showEdgeLabels ? null : 'none');
+
+            // 통계 수치 업데이트
+            document.getElementById('stat-classes').textContent = state.activeClasses.size;
+            document.getElementById('stat-nodes').textContent = visibleNodeIds.size;
+            document.getElementById('stat-links').textContent = visibleLinkCount;
+        }
+
+        // ============================================================================
+        // 8. 우측 상세 인스펙터 패널 렌더링 (노드 / 엣지 클릭 시)
+        // ============================================================================
+        function selectNodeById(nodeId) {
+            const node = nodes.find(n => n.id === nodeId);
+            if (node) {
+                selectNode(node);
+            }
+        }
+
+        function selectNode(node) {
+            state.selectedNodeId = node.id;
+            state.selectedLinkId = null;
+
+            nodeSelection.classed('node-selected', d => d.id === node.id);
+            document.getElementById('btn-clear-selection').classList.remove('hidden');
+            highlightNeighbors(node);
+
+            const cfg = CLASS_CONFIG[node.class];
+            const outgoing = links.filter(l => l.source.id === node.id);
+            const incoming = links.filter(l => l.target.id === node.id);
+
+            const attrRows = Object.entries(node.attributes || {}).map(([k, v]) => `
+                <div class="py-2 border-b border-slate-100 last:border-none">
+                    <div class="text-[11px] font-semibold text-slate-400">${k}</div>
+                    <div class="text-xs text-slate-800 mt-0.5 leading-relaxed">${v}</div>
+                </div>
+            `).join('');
+
+            const renderTripleItem = (l, direction) => {
+                const otherNode = direction === 'out' ? l.target : l.source;
+                const otherCfg = CLASS_CONFIG[otherNode.class];
+                return `
+                    <div onclick="selectNodeById('${otherNode.id}')"
+                         class="p-2.5 rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 cursor-pointer transition-all bg-white">
+                        <div class="flex items-center justify-between gap-1 mb-1">
+                            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                ${direction === 'out' ? '주어(Subject) →' : '← 목적어(Object)'}
+                            </span>
+                            <span class="text-[10px] font-medium text-slate-400">${l.article}</span>
+                        </div>
+                        <div class="text-xs text-slate-800 leading-snug">
+                            ${direction === 'out'
+                                ? `<span class="font-semibold text-slate-900">${node.label}</span> <span class="text-blue-600 font-bold">[${l.label}]</span> <span class="font-semibold underline decoration-slate-300" style="color:${otherCfg.color}">${otherNode.label}</span>`
+                                : `<span class="font-semibold underline decoration-slate-300" style="color:${otherCfg.color}">${otherNode.label}</span> <span class="text-blue-600 font-bold">[${l.label}]</span> <span class="font-semibold text-slate-900">${node.label}</span>`
+                            }
+                        </div>
+                        <div class="text-[11px] text-slate-500 mt-1">${l.detail}</div>
+                    </div>
+                `;
+            };
+
+            const detailHtml = `
+                <div class="space-y-4">
+                    <!-- 클래스 & ID 헤더 카드 -->
+                    <div class="p-3.5 rounded-xl border" style="background-color: ${cfg.bgLight}; border-color: ${cfg.borderColor}">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold text-white" style="background-color: ${cfg.color}">
+                                ${cfg.icon} ${cfg.koName} (${cfg.id})
+                            </span>
+                            <span class="text-xs font-mono font-bold text-slate-500">${node.id}</span>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-900 leading-tight">${node.label}</h3>
+                        <p class="text-xs text-slate-600 mt-0.5">${node.sublabel}</p>
+                    </div>
+
+                    <!-- 사료 원문 표기 -->
+                    <div>
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">사료 원문 표기</div>
+                        <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs font-serif text-slate-800 leading-relaxed">
+                            “${node.originalText}”
+                        </div>
+                    </div>
+
+                    <!-- 세부 속성 -->
+                    <div>
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">개체 속성 (Properties)</div>
+                        <div class="bg-white rounded-lg border border-slate-200 px-3">
+                            ${attrRows}
+                        </div>
+                    </div>
+
+                    <!-- 연결된 관계 트리플 -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">연결된 관계 트리플 (${outgoing.length + incoming.length})</span>
+                        </div>
+                        <div class="space-y-2">
+                            ${outgoing.map(l => renderTripleItem(l, 'out')).join('')}
+                            ${incoming.map(l => renderTripleItem(l, 'in')).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('detail-content').innerHTML = detailHtml;
+        }
+
+        function selectLink(link) {
+            state.selectedLinkId = link.id;
+            state.selectedNodeId = null;
+
+            nodeSelection.classed('node-selected', false);
+            document.getElementById('btn-clear-selection').classList.remove('hidden');
+            highlightSingleLink(link);
+
+            const srcCfg = CLASS_CONFIG[link.source.class];
+            const tgtCfg = CLASS_CONFIG[link.target.class];
+
+            const detailHtml = `
+                <div class="space-y-4">
+                    <div class="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-600 text-white">관계 (Relation / Edge)</span>
+                            <span class="text-xs font-mono font-bold text-slate-500">${link.id} · ${link.article}</span>
+                        </div>
+                        <h3 class="text-base font-bold text-slate-900 mt-1">${link.label}</h3>
+                    </div>
+
+                    <!-- 트리플 구조 시각화 -->
+                    <div class="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2.5">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">의미적 트리플 구조</div>
+
+                        <div onclick="selectNodeById('${link.source.id}')" class="p-2.5 rounded-lg border border-slate-200 hover:border-blue-400 cursor-pointer flex items-center justify-between">
+                            <div>
+                                <div class="text-[10px] text-slate-400 font-semibold">출발 노드 (Subject)</div>
+                                <div class="text-xs font-bold text-slate-900">${link.source.label}</div>
+                            </div>
+                            <span class="text-[10px] px-2 py-0.5 rounded text-white font-semibold" style="background-color:${srcCfg.color}">${srcCfg.koName}</span>
+                        </div>
+
+                        <div class="flex items-center justify-center text-blue-600 font-bold text-xs py-0.5">
+                            ↓ [${link.label}] ↓
+                        </div>
+
+                        <div onclick="selectNodeById('${link.target.id}')" class="p-2.5 rounded-lg border border-slate-200 hover:border-blue-400 cursor-pointer flex items-center justify-between">
+                            <div>
+                                <div class="text-[10px] text-slate-400 font-semibold">도착 노드 (Object)</div>
+                                <div class="text-xs font-bold text-slate-900">${link.target.label}</div>
+                            </div>
+                            <span class="text-[10px] px-2 py-0.5 rounded text-white font-semibold" style="background-color:${tgtCfg.color}">${tgtCfg.koName}</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">사료 맥락 및 해석</div>
+                        <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 leading-relaxed">
+                            ${link.detail}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('detail-content').innerHTML = detailHtml;
+        }
+
+        function clearSelection() {
+            state.selectedNodeId = null;
+            state.selectedLinkId = null;
+            nodeSelection.classed('node-selected', false);
+            document.getElementById('btn-clear-selection').classList.add('hidden');
+            resetHighlight();
+        }
+
+        // ============================================================================
+        // 9. 컨트롤 버튼 및 이벤트 바인딩
+        // ============================================================================
+        // 화면 맞춤(Fit to Screen) 함수
+        function fitGraphToScreen(animate = true) {
+            const visibleNodes = nodes.filter(n => state.activeClasses.has(n.class));
+            if (visibleNodes.length === 0) return;
+
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            visibleNodes.forEach(n => {
+                if (n.x < minX) minX = n.x;
+                if (n.x > maxX) maxX = n.x;
+                if (n.y < minY) minY = n.y;
+                if (n.y > maxY) maxY = n.y;
+            });
+
+            const padding = 85;
+            const graphW = (maxX - minX) + padding * 2;
+            const graphH = (maxY - minY) + padding * 2;
+            const currentW = containerEl.clientWidth;
+            const currentH = containerEl.clientHeight;
+
+            const scale = Math.min(1.25, Math.max(0.35, Math.min(currentW / graphW, currentH / graphH)));
+            const midX = (minX + maxX) / 2;
+            const midY = (minY + maxY) / 2;
+
+            const transform = d3.zoomIdentity
+                .translate(currentW / 2 - scale * midX, currentH / 2 - scale * midY)
+                .scale(scale);
+
+            if (animate) {
+                svg.transition().duration(550).call(zoomBehavior.transform, transform);
+            } else {
+                svg.call(zoomBehavior.transform, transform);
+            }
+        }
+
+        // 레이아웃 초기화 함수
+        function resetLayout() {
+            const currentW = containerEl.clientWidth;
+            const currentH = containerEl.clientHeight;
+            nodes.forEach(n => {
+                n.fx = null;
+                n.fy = null;
+                n.x = currentW / 2 + (n.fx_init || 0);
+                n.y = currentH / 2 + (n.fy_init || 0);
+                n.vx = 0;
+                n.vy = 0;
+            });
+            simulation.alpha(0.85).restart();
+            setTimeout(() => fitGraphToScreen(true), 450);
+        }
+
+        document.getElementById('btn-zoom-in').addEventListener('click', () => {
+            svg.transition().duration(250).call(zoomBehavior.scaleBy, 1.25);
+        });
+
+        document.getElementById('btn-zoom-out').addEventListener('click', () => {
+            svg.transition().duration(250).call(zoomBehavior.scaleBy, 0.8);
+        });
+
+        document.getElementById('btn-fit').addEventListener('click', () => fitGraphToScreen(true));
+        document.getElementById('btn-reset').addEventListener('click', resetLayout);
+        document.getElementById('btn-clear-selection').addEventListener('click', clearSelection);
+
+        // 전체 클래스 선택/해제 토글
+        document.getElementById('btn-toggle-all').addEventListener('click', () => {
+            const allKeys = Object.keys(CLASS_CONFIG);
+            if (state.activeClasses.size === allKeys.length) {
+                state.activeClasses.clear();
+                document.getElementById('btn-toggle-all').textContent = '전체 선택';
+            } else {
+                allKeys.forEach(k => state.activeClasses.add(k));
+                document.getElementById('btn-toggle-all').textContent = '전체 해제';
+            }
+            state.showArticles = state.activeClasses.has('Article');
+            document.getElementById('toggle-articles').checked = state.showArticles;
+            renderClassFilters();
+            updateGraphVisibility();
+        });
+
+        // 관계 라벨 표시 체크박스
+        document.getElementById('toggle-edge-labels').addEventListener('change', (e) => {
+            state.showEdgeLabels = e.target.checked;
+            updateGraphVisibility();
+        });
+
+        // 조항 노드 빠른 토글 체크박스
+        document.getElementById('toggle-articles').addEventListener('change', (e) => {
+            state.showArticles = e.target.checked;
+            if (state.showArticles) {
+                state.activeClasses.add('Article');
+            } else {
+                state.activeClasses.delete('Article');
+            }
+            renderClassFilters();
+            updateGraphVisibility();
+        });
+
+        // 검색 입력 이벤트
+        const searchInput = document.getElementById('search-input');
+        const clearSearchBtn = document.getElementById('clear-search');
+
+        searchInput.addEventListener('input', (e) => {
+            state.searchQuery = e.target.value;
+            clearSearchBtn.classList.toggle('hidden', !state.searchQuery);
+            updateGraphVisibility();
+        });
+
+        clearSearchBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            state.searchQuery = '';
+            clearSearchBtn.classList.add('hidden');
+            updateGraphVisibility();
+        });
+
+        // 사료 원문 모달 제어
+        const sourceModal = document.getElementById('source-modal');
+        document.getElementById('btn-source-modal').addEventListener('click', () => {
+            sourceModal.classList.remove('hidden');
+        });
+        document.getElementById('close-source-modal').addEventListener('click', () => {
+            sourceModal.classList.add('hidden');
+        });
+        sourceModal.addEventListener('click', (e) => {
+            if (e.target === sourceModal) sourceModal.classList.add('hidden');
+        });
+
+        // 윈도우 리사이즈 대응
+        window.addEventListener('resize', () => {
+            width = containerEl.clientWidth;
+            height = containerEl.clientHeight;
+            simulation.force('center', d3.forceCenter(width / 2, height / 2).strength(0.05));
+        });
+
+        // 초기 실행
+        renderClassFilters();
+        updateGraphVisibility();
+        setTimeout(() => fitGraphToScreen(false), 600);
+    </script>
+</body>
+</html>
